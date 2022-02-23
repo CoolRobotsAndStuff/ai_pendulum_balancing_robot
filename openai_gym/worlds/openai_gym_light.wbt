@@ -1,0 +1,88 @@
+#VRML_SIM R2022a utf8
+WorldInfo {
+  info [
+    "This example shows an integration of OpenAI Gym with Webots."
+  ]
+  title "OpenAI Gym Environment"
+  contactProperties [
+    ContactProperties {
+      material1 "frictionless"
+      coulombFriction [
+        0
+      ]
+      bounce 0
+      softERP 0
+    }
+  ]
+}
+Viewpoint {
+  orientation 0.07351741550571941 0.06703629917248677 -0.995038353135504 1.6679054091954348
+  position 0.21544219376381812 5.253465664650998 1.0792086105558583
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+Pioneer3at {
+  hidden linearVelocity_0 0.004521414734230636 4.273151102621307e-05 0.0018554397404607062
+  hidden angularVelocity_0 -0.0002310327948963704 0.024803397777141727 2.1257653205577888e-05
+  translation 0.00037318719114689744 2.5180316771600798e-08 -0.002684539928423435
+  rotation -0.00350042643439903 -0.9999937747100263 0.0004444726880508864 0.002847250308280108
+  controller "openai_gym"
+  supervisor TRUE
+  extensionSlot [
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        position 0.008171890330357194
+        axis 0 1 0
+        anchor 0 0 0.21
+        minStop -1
+        maxStop 1
+      }
+      device [
+        PositionSensor {
+        }
+      ]
+      endPoint Solid {
+        translation 0.0024515398133416163 0 0.5099899830870086
+        rotation 0 1 0 0.008171890330348432
+        children [
+          DEF POLE_ENDPOINT Solid {
+            translation 0 0 0.26
+            children [
+              DEF BALL_SHAPE Shape {
+                appearance CorrodedMetal {
+                }
+                geometry Sphere {
+                  radius 0.1
+                  subdivision 3
+                }
+              }
+            ]
+            boundingObject USE BALL_SHAPE
+            physics Physics {
+              density -1
+              mass 0.1
+            }
+          }
+          DEF POLE_SHAPE Shape {
+            appearance OsbWood {
+            }
+            geometry Cylinder {
+              height 0.5
+              radius 0.011
+            }
+          }
+        ]
+        boundingObject USE POLE_SHAPE
+        physics Physics {
+        }
+      }
+    }
+  ]
+}
+Floor {
+  appearance Parquetry {
+    type "light strip"
+  }
+}
