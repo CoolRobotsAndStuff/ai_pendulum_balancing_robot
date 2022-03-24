@@ -213,22 +213,28 @@ class OpenAIGymEnvironment(Supervisor, gym.Env):
 
         return self.state.astype(np.float32), reward, done, {}
 
+
 def main():
     # Initialize the environment
     env = OpenAIGymEnvironment()
     check_env(env)
 
     # Train
-    model = PPO.load("stage_2.0")
+    #model = PPO('MlpPolicy', env, n_steps=10, verbose=1)
 
-    #model.save("model_v1")
+    model = PPO.load("stage_1.1", env=env)
+
+    
+    model.learn(total_timesteps= 10* 100)
+
+    model.save("stage_2.0")
 
     # Replay
-    #print('Training is finished, press `Y` for replay...')
-    #env.wait_keyboard()
+    print('Training is finished, press `Y` for replay...')
+    env.wait_keyboard()
 
     obs = env.reset()
-    for _ in range(2048 * 1000):
+    for _ in range(1000):
         action, _states = model.predict(obs)
         obs, reward, done, info = env.step(action)
         print(obs, reward, done, info)

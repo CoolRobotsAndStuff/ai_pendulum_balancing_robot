@@ -13,8 +13,14 @@
 # limitations under the License.
 
 import sys
-import time
+import os
+
+from matplotlib.pyplot import step
 from controller import Supervisor
+
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+
+from simple_pid import PID
 
 try:
     import gym
@@ -29,7 +35,7 @@ except ImportError:
 
 
 class OpenAIGymEnvironment(Supervisor, gym.Env):
-    def __init__(self, max_episode_steps=1000):
+    def __init__(self, max_episode_steps=1):
         super().__init__()
 
         # Open AI Gym generic
@@ -37,17 +43,35 @@ class OpenAIGymEnvironment(Supervisor, gym.Env):
         self.x_threshold = 0.3
         high = np.array(
             [
-                self.x_threshold * 2,
                 np.finfo(np.float32).max,
-                self.theta_threshold_radians * 2,
+                np.finfo(np.float32).max,
                 np.finfo(np.float32).max
+
             ],
             dtype=np.float32
         )
 
-        actHigh = np.array([1], dtype=np.float32)
-        actLow = np.array([-1], dtype=np.float32)
-        #self.action_space = gym.spaces.Discrete(2)
+        actHigh = np.array(
+                [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                ], 
+                dtype=np.float32)
+        actLow = np.array(
+                [
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1
+                ], 
+                dtype=np.float32)
+        
         self.action_space = gym.spaces.Box(actLow, actHigh, dtype=np.float32)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.state = None
@@ -64,6 +88,8 @@ class OpenAIGymEnvironment(Supervisor, gym.Env):
 
         self.step_n = 0
         self.succeded = False
+
+        self.best = float("-inf")
         #self.target = 0
         #self.target_dir = 0
 
@@ -92,80 +118,100 @@ class OpenAIGymEnvironment(Supervisor, gym.Env):
         # Internals
         super().step(self.__timestep)
 
-        #self.target = 0
-        #self.target_dir = 0
-        self.step_n = 0
 
         # Open AI Gym generic
-        return np.array([0, 0, 0, 0]).astype(np.float32)
+        return np.array([0, 0, 0]).astype(np.float32)
 
     def step(self, action):
-        # Execute the action
-        for wheel in self.__wheels:
-            wheel.setVelocity(action[0] * 5)
-        super().step(self.__timestep)
+
+        step_n = 0
+        pid_pend = PID(action[0] * 100, action[1] * 100, action[2] * 100, setpoint=0)
+        pid_pend.sample_time = 0
+
+        pid_pos = PID(action[3] * 100, action[4] * 100, action[4] * 100, setpoint=0)
+
+        print("Action: ", action)
+
+        comp_pendulum_sensor = 0
+        total_endpoint_velocity = 0
+
+        reward = 0
+
+        while True:
+            super().step(self.__timestep)
+
+            robot = self.getSelf()
+            endpoint = self.getFromDef("POLE_ENDPOINT")
+
+            robot_x_pos = robot.getPosition()[2]
+            robot_x_vel = robot.getVelocity()[2]
+            pendulum_sensor_val = self.__pendulum_sensor.getValue()
+            endpoint_x_vel = endpoint.getVelocity()[3]
+            endpoint_x_pos = endpoint.getPosition()[0]
+            #print("endpoint pos:", endpoint_pos)
+
+            comp_pendulum_sensor += pendulum_sensor_val
+            if endpoint_x_vel > 0:
+                total_endpoint_velocity += endpoint_x_vel
+            else:
+                total_endpoint_velocity -= endpoint_x_vel
+
+            # Failed
+            failed = bool(
+                robot_x_pos < -self.x_threshold or
+                robot_x_pos > self.x_threshold or
+                pendulum_sensor_val < -self.theta_threshold_radians or
+                pendulum_sensor_val > self.theta_threshold_radians
+            )
+
+            # Did it
+
+            self.succeded = step_n >= 9999
+
+            print("Step Number:", step_n)
+
+            if self.succeded:
+                print("SUCESS!")
+
+            # Done
+
+            done = bool(failed or self.succeded)
+            
+            difference = 0
+
+            target = endpoint_x_pos - difference
+            # Reward
+            if failed:
+                reward_add = -200
+            else:
+                #reward_add = 1
+                reward_add = 1 - ((target * 4) if target > 0 else (target * -4))
+
+            print("reward_add:", reward_add) 
+            reward += reward_add
+            print("reward:", reward)
+
+            if done:
+                break
+            
+            step_n += 1
+
+            # Execute the action
+            for wheel in self.__wheels:
+                wheel.setVelocity(pid_pend(pendulum_sensor_val) + pid_pos(target))
 
         # Observation
-        robot = self.getSelf()
-        endpoint = self.getFromDef("POLE_ENDPOINT")
-        self.state = np.array([robot.getPosition()[2], robot.getVelocity()[2],
-                               self.__pendulum_sensor.getValue(), endpoint.getVelocity()[3]])
-
-        # Failed
-        failed = bool(
-            self.state[0] < -self.x_threshold or
-            self.state[0] > self.x_threshold or
-            self.state[2] < -self.theta_threshold_radians or
-            self.state[2] > self.theta_threshold_radians
-        )
-
-        # Did it
-
-        self.succeded = self.step_n >= 999
-
-        if self.succeded:
-            print("SUCESS!")
-
-        # Done
-
-        done = bool(failed or self.succeded)
         
-        
-        endpoint_x = endpoint.getPosition()[0]
-        #print("endpoint pos:", endpoint_pos)
 
-        # Reward
-        if failed: 
-            reward = -200
-        else:
-            reward = 1 - ((endpoint_x * 4) if endpoint_x > 0 else (endpoint_x * -4))
-            print("reward:", reward)
-        
-        """
-        try:
-            assert 1 >= reward >= 0
-        
-        except AssertionError:
-            print("reward:", reward)
-        """
+        self.state = np.array([total_endpoint_velocity, comp_pendulum_sensor, step_n])
 
+        print("State:", self.state)
+        print("Final reward:", reward)
 
-        self.step_n += 1
+        self.best = max(self.best, step_n)
 
-        """
-        if self.target_dir == 0:
-            self.target += 0.001
-        
-        else:
-            self.target -= 0.001
-        
-        if self.target > 0.3:
-            self.target_dir = 1
-        elif self.target < -0.3:
-            self.target_dir = 0
+        print("Best so far:", self.best)
 
-        print("target: ", self.target)
-        """
 
         return self.state.astype(np.float32), reward, done, {}
 
@@ -176,19 +222,19 @@ def main():
     check_env(env)
 
     # Train
-    model = PPO('MlpPolicy', env, n_steps=2048, verbose=1)
+    model = PPO('MlpPolicy', env, n_steps=2, verbose=1)
 
     
-    model.learn(total_timesteps=2048 * 10000)
+    model.learn(total_timesteps= 2* 100)
 
-    model.save("model_v1")
+    model.save("model_v2")
 
     # Replay
     print('Training is finished, press `Y` for replay...')
     env.wait_keyboard()
 
     obs = env.reset()
-    for _ in range(2048 * 1000):
+    for _ in range(1000):
         action, _states = model.predict(obs)
         obs, reward, done, info = env.step(action)
         print(obs, reward, done, info)
